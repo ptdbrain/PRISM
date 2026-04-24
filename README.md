@@ -12,6 +12,43 @@ PRISM is a zero-cost and largely data-free mixed-precision quantization pipeline
 ## Demo
 
 ```bash
-python -m pytest tests/prism -v
 prism-demo --output-root artifacts/prism/demo
+```
+
+## Real Model Workflow
+
+Train or prepare a meta-learner checkpoint:
+
+```bash
+prism-train-meta --output-dir artifacts/prism/meta
+```
+
+Profile a real Hugging Face model:
+
+```bash
+prism-profile \
+  --model-id-or-path meta-llama/Llama-2-7b-hf \
+  --family llama \
+  --mlp-path artifacts/prism/meta/prism_mlp.pt \
+  --output-path artifacts/prism/profile.json
+```
+
+Precompute RTN artifacts:
+
+```bash
+prism-precompute-rtn \
+  --model-id-or-path meta-llama/Llama-2-7b-hf \
+  --family llama \
+  --output-dir artifacts/prism/rtn
+```
+
+Assemble and optionally execute the runtime:
+
+```bash
+prism-run \
+  --model-id-or-path meta-llama/Llama-2-7b-hf \
+  --family llama \
+  --artifact-root artifacts/prism/rtn \
+  --assignment-path artifacts/prism/quic_assignment.json \
+  --execute
 ```
