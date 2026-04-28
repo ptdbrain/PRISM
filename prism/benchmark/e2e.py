@@ -25,6 +25,10 @@ logger = logging.getLogger("PRISM-Benchmark")
 def main():
     parser = argparse.ArgumentParser(description="PRISM End-to-End Benchmark")
     parser.add_argument("--model_id", type=str, required=True, help="HuggingFace model ID or path")
+    parser.add_argument("--mlp-path", type=str, required=True, help="Path to prism_mlp.pt checkpoint")
+    parser.add_argument("--family", type=str, default="auto", help="Model family override")
+    parser.add_argument("--group-size", type=int, default=128)
+    parser.add_argument("--trust-remote-code", action="store_true")
     parser.add_argument("--target_bits", type=float, default=4.0, help="Target average bit-width")
     parser.add_argument("--dataset", type=str, default="wikitext2", help="Calibration dataset")
     parser.add_argument("--output_file", type=str, default="prism_benchmark.json", help="Result JSON file")
@@ -61,12 +65,19 @@ def main():
         
         quantizer = PRISM(
             model_id=args.model_id,
+            family=None if args.family == "auto" else args.family,
             dataset=args.dataset,
             artifact_dir=tmp_path,
+            device=device,
+            trust_remote_code=args.trust_remote_code,
         )
         
         # Run End-to-End Pipeline
-        quantized_model = quantizer.run(target_bits=args.target_bits)
+        quantized_model = quantizer.run(
+            target_bits=args.target_bits,
+            group_size=args.group_size,
+            mlp_path=args.mlp_path,
+        )
         
         search_time = time.perf_counter() - start_search
         report["metrics"]["search_time_seconds"] = round(search_time, 2)
