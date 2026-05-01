@@ -17,13 +17,18 @@ class ProfileLayerRecord:
     adjusted_score: float
     fixed_4bit: bool
     fixed_reason: str = ""
+    sensitivity_by_bit: dict[str, float] = field(default_factory=dict)
+    memory_cost_by_bit: dict[str, float] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "ProfileLayerRecord":
-        return cls(**payload)
+        data = dict(payload)
+        data.setdefault("sensitivity_by_bit", {})
+        data.setdefault("memory_cost_by_bit", {})
+        return cls(**data)
 
 
 @dataclass
