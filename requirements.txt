@@ -1,3 +1,12 @@
-pytest>=9.0.0
-torch>=2.11.0
-scipy>=1.17.0
+# Core deep-learning (let Colab's pre-installed PyTorch+CUDA stay matched)
+torch>=2.0.0
+scipy>=1.10.0
+numpy>=1.24.0
+
+# HuggingFace ecosystem
+transformers>=4.35.0
+datasets>=2.14.0
+
+# Utilities
+tqdm
+pytest>=7.0.0
