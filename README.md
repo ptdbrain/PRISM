@@ -1,11 +1,11 @@
 # PRISM
 
-PRISM is a zero-cost and largely data-free mixed-precision quantization pipeline with:
+PRISM is a low-cost, deployment-time calibration-free mixed-precision quantization pipeline with:
 
 - Stage 0 meta-learner training
-- Stage 1 zero-cost profiling
-- Stage 2 budgeted LP-style bit assignment
-- Stage 2.5 QUIC output-space correction
+- Stage 1 data-free profiling with layer/shape/outlier/RTN-error features
+- Stage 2 budgeted discrete one-hot bit assignment under realistic memory accounting
+- Stage 2.5 synthetic-only QUIC output-space correction
 - Stage 3 RTN precomputation
 - Stage 4 runtime assembly with Marlin preference and PyTorch GEMM fallback
 
@@ -30,6 +30,7 @@ prism-profile \
   --model-id-or-path meta-llama/Llama-2-7b-hf \
   --family llama \
   --mlp-path artifacts/prism/meta/prism_mlp.pt \
+  --group-size 128 \
   --output-path artifacts/prism/profile.json
 ```
 

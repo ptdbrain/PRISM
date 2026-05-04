@@ -14,7 +14,13 @@ from prism.runtime.assemble import assemble_runtime_model
 def test_assemble_runtime_model_falls_back_to_gemm_when_marlin_is_unavailable(tmp_path: Path) -> None:
     model = MockTransformerLM(hidden_size=8, num_layers=1)
     checkpoint_dir = tmp_path / "checkpoint"
-    train_meta_learner(make_sensitivity_dataset(model), output_dir=checkpoint_dir, epochs=3, seed=0)
+    train_meta_learner(
+        make_sensitivity_dataset(model),
+        output_dir=checkpoint_dir,
+        model=model,
+        epochs=3,
+        seed=0,
+    )
     profile = profile_model(model=model, checkpoint_dir=checkpoint_dir)
     assignment = assign_bits(profile, target_average_bits=3.0)
     manifest = precompute_model_rtn(model=model, output_dir=tmp_path / "rtn", group_size=8)

@@ -5,7 +5,7 @@ setup(
     name="prism",
     version="0.1.0",
     packages=find_packages(include=["prism", "prism.*"]),
-    install_requires=["torch>=2.11.0", "scipy>=1.17.0"],
+    install_requires=["torch>=2.0.0", "scipy>=1.10.0"],
     entry_points={
         "console_scripts": [
             "prism-train-meta=prism.cli.train_meta:main",

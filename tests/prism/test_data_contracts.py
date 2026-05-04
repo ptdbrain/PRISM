@@ -17,7 +17,7 @@ def test_profile_artifact_round_trip(tmp_path: Path) -> None:
                 features={
                     "kurtosis": 1.2,
                     "spectral_entropy": 0.8,
-                    "effective_rank_ratio": 0.5,
+                    "rank_ratio": 0.5,
                     "nuclear_norm_normalized": 0.1,
                 },
                 raw_score=2.0,
