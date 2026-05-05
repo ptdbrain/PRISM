@@ -1,0 +1,196 @@
+multis GPU
+shard worker
+runtime/assemble
+     14 -from copy import deepcopy
+     14  from pathlib import Path
+        ⋮
+     34
+     36 -def assemble_runtime_model(base_model, manifest: dict[str, object], assignment: dict[str, object], artifact_roo
+         t: Path):
+     35 +def _module_device(module) -> torch.device:
+     36 +    for tensor in list(module.parameters(recurse=False)) + list(module.buffers(recurse=False)):
+     37 +        return tensor.device
+     38 +    return torch.device("cpu")
+     39 +
+     40 +
+     41 +def assemble_runtime_model(
+     42 +    base_model,
+     43 +    manifest: dict[str, object],
+     44 +    assignment: dict[str, object],
+     45 +    artifact_root: Path,
+     46 +    *,
+     47 +    copy_model: bool = True,
+     48 +):
+     49      """Build a mixed-precision runtime model from precomputed RTN artifacts.
+        ⋮
+     63      adapter = getattr(base_model, "_prism_adapter", None)
+     52 -    model = deepcopy(base_model)
+     53 -    if adapter is not None:
+     66 +
+     67 +        model = deepcopy(base_model)
+     68 +        if adapter is not None:
+     69 +            setattr(model, "_prism_adapter", adapter)
+     70 +    else:
+     71 +        model = base_model
+     72      backend_by_layer: dict[str, str] = {}
+        ⋮
+     76
+     60 -    for layer_name, _module in iter_named_linear_layers(model):
+     77 +    for layer_name, current_module in iter_named_linear_layers(model):
+     78          bit = int(chosen_assignment[layer_name])
+        ⋮
+     81          scales = torch.load(artifact_root / layer_entry["scale_path"], map_location="cpu")
+     82 +        target_device = _module_device(current_module)
+     83
+        ⋮
+    166
+    167 +        wrapper = wrapper.to(target_device)
+    168          _set_module_by_name(model, layer_name, wrapper)
+
+profiling/metalearner
+ 147      feat = extract_features(W, feature_names=feature_order).unsqueeze(0)
+    148 -    feat_norm = (feat - mlp.feat_mean) / mlp.feat_std
+    148 +    mlp_device = next(mlp.parameters()).device
+    149 +    feat_mean = mlp.feat_mean.to(device=feat.device, dtype=feat.dtype)
+    150 +    feat_std = mlp.feat_std.to(device=feat.device, dtype=feat.dtype)
+    151 +    feat_norm = ((feat - feat_mean) / feat_std).to(device=mlp_device, dtype=torch.float32)
+    152      with torch.no_grad():
+    150 -        pred = mlp(feat_norm)
+    151 -    idx = {2: 0, 3: 1, 4: 2}[bits]
+    152 -    return pred[0, idx].item()
+    153 +        pred = mlp(feat_norm).cpu()
+    154 +    idx = {2: 0, 3: 1, 4: 2}[bits]
+    155 +    return pred[0, idx].item()
+    156
+        ⋮
+    174          ).unsqueeze(0)
+    172 -        feat_norm = (feat - mlp.feat_mean) / mlp.feat_std
+    175 +        mlp_device = next(mlp.parameters()).device
+    176 +        feat_mean = mlp.feat_mean.to(device=feat.device, dtype=feat.dtype)
+    177 +        feat_std = mlp.feat_std.to(device=feat.device, dtype=feat.dtype)
+    178 +        feat_norm = ((feat - feat_mean) / feat_std).to(device=mlp_device, dtype=torch.float32)
+    179          with torch.no_grad():
+    174 -            pred = mlp(feat_norm)[0]
+    180 +            pred = mlp(feat_norm)[0].cpu()
+    181          sens: dict[int, float] = {
+
+
+
+
+
+
+
+
+
+
+• I updated PRISM.ipynb, added a generic worker at PRISM/_multi_gpu_stage_worker.py:1, and patched PRISM/prism/runtime/
+  assemble.py:35 plus PRISM/prism/profiling/meta_learner.py:143.
+
+  What changed:
+
+  1. Analysis and mode selection
+
+  - The notebook now detects torch.cuda.device_count() and prints both T4s plus VRAM.
+  - It estimates model weight size from an empty HF config, then does a single-GPU load probe.
+  - Decision:
+      - fits one T4 -> task_parallel
+      - does not fit / probe fails -> model_parallel
+
+  2. Case 1: task parallel on 2 GPUs
+
+  - The old shard split was a simple midpoint split. I replaced it with balanced two-worker execution.
+  - Profiling shard generation now runs in parallel through isolated GPU workers.
+  - I also added helpers for later Stage 1 profile build and Stage 3 RTN precompute, again split by layer size, not
+    blind full-work duplication.
+
+  3. Case 2: model parallel across 2 GPUs
+
+  - Added load_model_model_parallel(... device_map="auto" ...) in the notebook helper cell.
+  - Fixed profiling so the MLP stats move correctly between sharded layer devices and the MLP device.
+  - Fixed runtime assembly so it can assemble in place on a sharded base model with copy_model=False, and each wrapped
+    layer stays on its original GPU.
+
+  4. Assignment stage
+
+  - I left assignment single-process. It is solver-heavy, but not the main GPU bottleneck. The GPU-sensitive parts are
+    profiling and RTN precompute.
+
+  Relevant notebook blocks:
+
+  import torch
+
+  print("CUDA:", torch.cuda.is_available())
+  GPU_COUNT = torch.cuda.device_count()
+  print("GPU count:", GPU_COUNT)
+  for gpu_id in range(GPU_COUNT):
+      props = torch.cuda.get_device_properties(gpu_id)
+      total_gib = props.total_memory / (1024 ** 3)
+      print(f"GPU {gpu_id}: {torch.cuda.get_device_name(gpu_id)} | {total_gib:.1f} GiB")
+
+  def choose_execution_mode(model_name, torch_dtype=torch.float16, trust_remote_code=False):
+      estimated_weight_gib = estimate_model_weight_size_gib(model_name, torch_dtype, trust_remote_code)
+      single_gpu_budget = min(single_gpu_usable_gib(0), single_gpu_usable_gib(1))
+      if estimated_weight_gib <= single_gpu_budget * 0.88:
+          fits, error = probe_single_gpu_load(model_name, torch_dtype, trust_remote_code, gpu_id=0)
+          if fits:
+              return {"mode": "task_parallel", "estimated_weight_gib": estimated_weight_gib}
+      return {"mode": "model_parallel", "estimated_weight_gib": estimated_weight_gib}
+
+  if MODE_INFO["mode"] == "task_parallel":
+      run_sensitivity_dataset_task_parallel(MODE_INFO)
+  else:
+      print("Model-parallel mode selected. Use the helper cell below to run Stage 1-4 with device_map='auto'.")
+
+  def run_prism_pipeline_kaggle(model_name, mlp_path, target_average_bits=3.0, ...):
+      mode_info = choose_execution_mode(model_name, ...)
+      if mode_info["mode"] == "model_parallel":
+          base_model = load_model_model_parallel(model_name, ...)
+          profile = build_profile_artifact(base_model, mlp_path=Path(mlp_path), ...)
+          assignment = assign_bits(profile, target_average_bits=target_average_bits)
+          manifest = precompute_model_rtn(base_model, output_dir=artifacts_root / "rtn", ...)
+          runtime_model, runtime_summary = assemble_runtime_model(
+              base_model, manifest, assignment, artifact_root=artifacts_root / "rtn", copy_model=False
+          )
+      else:
+          profile = run_profile_artifact_task_parallel(...)
+          assignment = assign_bits(profile, target_average_bits=target_average_bits)
+          manifest = run_rtn_precompute_task_parallel(...)
+          base_model = load_model_single_gpu(model_name, ...)
+          runtime_model, runtime_summary = assemble_runtime_model(
+              base_model, manifest, assignment, artifact_root=artifacts_root / "rtn", copy_model=True
+          )
+      return {...}
+
+  New helper/support files:
+
+  - PRISM/_multi_gpu_stage_worker.py:1: GPU-isolated worker for:
+      - sensitivity_dataset
+      - profile_artifact
+      - rtn_precompute
+  - PRISM/prism/runtime/assemble.py:41: added copy_model and per-layer device placement.
+  - PRISM/prism/profiling/meta_learner.py:143: fixed sharded-device profiling.
+
+  How to run on Kaggle:
+
+  1. Run setup cells, then restart the session after the ninja cell.
+  2. Run the updated shard/profiling cell. It will auto-pick task_parallel or model_parallel.
+  3. Run the merge/train cell to produce:
+     artifacts/prism/<model>_merged/prism_mlp.pt
+  4. Run the new helper cell.
+  5. Execute:
+
+  result = run_prism_pipeline_kaggle(
+      model_name=MODEL_NAME,
+      mlp_path=Path(REPO_DIR) / "artifacts" / "prism" / f"{sanitized_model_name}_merged" / "prism_mlp.pt",
+      target_average_bits=3.0,
+  )
+
+  Verification I ran here:
+
+  - python3 -m json.tool PRISM.ipynb
+  - python3 -m py_compile PRISM/_multi_gpu_stage_worker.py PRISM/prism/runtime/assemble.py PRISM/prism/profiling/
+    meta_learner.py
+  - python3 PRISM/_multi_gpu_stage_worker.py --help
+
+  I did not run the full Kaggle pipeline end to end here because this environment does not provide the Kaggle 2xT4
+  runtime or model downloads.

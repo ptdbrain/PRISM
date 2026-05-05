@@ -145,9 +145,12 @@ def predict_sensitivity(mlp: SensitivityMLP, W: torch.Tensor, bits: int) -> floa
         raise ValueError("bits must be 2, 3, or 4")
     feature_order = tuple(getattr(mlp, "feature_order", FEATURE_NAMES))
     feat = extract_features(W, feature_names=feature_order).unsqueeze(0)
-    feat_norm = (feat - mlp.feat_mean) / mlp.feat_std
+    mlp_device = next(mlp.parameters()).device
+    feat_mean = mlp.feat_mean.to(device=feat.device, dtype=feat.dtype)
+    feat_std = mlp.feat_std.to(device=feat.device, dtype=feat.dtype)
+    feat_norm = ((feat - feat_mean) / feat_std).to(device=mlp_device, dtype=torch.float32)
     with torch.no_grad():
-        pred = mlp(feat_norm)
+        pred = mlp(feat_norm).cpu()
     idx = {2: 0, 3: 1, 4: 2}[bits]
     return pred[0, idx].item()
 
@@ -169,9 +172,12 @@ def profile_model(model: torch.nn.Module, mlp: SensitivityMLP, group_size: int =
             group_size=group_size,
             feature_names=feature_order,
         ).unsqueeze(0)
-        feat_norm = (feat - mlp.feat_mean) / mlp.feat_std
+        mlp_device = next(mlp.parameters()).device
+        feat_mean = mlp.feat_mean.to(device=feat.device, dtype=feat.dtype)
+        feat_std = mlp.feat_std.to(device=feat.device, dtype=feat.dtype)
+        feat_norm = ((feat - feat_mean) / feat_std).to(device=mlp_device, dtype=torch.float32)
         with torch.no_grad():
-            pred = mlp(feat_norm)[0]
+            pred = mlp(feat_norm)[0].cpu()
         sens: dict[int, float] = {
             2: float(pred[0].item()),
             3: float(pred[1].item()),

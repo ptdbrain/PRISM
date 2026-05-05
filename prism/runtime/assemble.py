@@ -11,7 +11,6 @@ Backend selection follows the priority order defined in ``backends.py``.
 
 from __future__ import annotations
 
-from copy import deepcopy
 from pathlib import Path
 
 import torch
@@ -33,7 +32,20 @@ def _set_module_by_name(root, name: str, module) -> None:
     setattr(parent, parts[-1], module)
 
 
-def assemble_runtime_model(base_model, manifest: dict[str, object], assignment: dict[str, object], artifact_root: Path):
+def _module_device(module) -> torch.device:
+    for tensor in list(module.parameters(recurse=False)) + list(module.buffers(recurse=False)):
+        return tensor.device
+    return torch.device("cpu")
+
+
+def assemble_runtime_model(
+    base_model,
+    manifest: dict[str, object],
+    assignment: dict[str, object],
+    artifact_root: Path,
+    *,
+    copy_model: bool = True,
+):
     """Build a mixed-precision runtime model from precomputed RTN artifacts.
 
     For 4-bit layers where Marlin is available, weights are repacked into
@@ -49,19 +61,25 @@ def assemble_runtime_model(base_model, manifest: dict[str, object], assignment: 
         Metadata including per-layer backend selection.
     """
     adapter = getattr(base_model, "_prism_adapter", None)
-    model = deepcopy(base_model)
-    if adapter is not None:
-        setattr(model, "_prism_adapter", adapter)
+    if copy_model:
+        from copy import deepcopy
+
+        model = deepcopy(base_model)
+        if adapter is not None:
+            setattr(model, "_prism_adapter", adapter)
+    else:
+        model = base_model
     backend_by_layer: dict[str, str] = {}
 
     chosen_assignment = assignment["bits"]
     group_size = int(manifest["group_size"])
 
-    for layer_name, _module in iter_named_linear_layers(model):
+    for layer_name, current_module in iter_named_linear_layers(model):
         bit = int(chosen_assignment[layer_name])
         layer_entry = manifest["layers"][layer_name][str(bit)]
         qweight = torch.load(artifact_root / layer_entry["qweight_path"], map_location="cpu")
         scales = torch.load(artifact_root / layer_entry["scale_path"], map_location="cpu")
+        target_device = _module_device(current_module)
 
         backend = choose_backend(
             bit=bit,
@@ -146,6 +164,7 @@ def assemble_runtime_model(base_model, manifest: dict[str, object], assignment: 
                 shape=shape,
             )
 
+        wrapper = wrapper.to(target_device)
         _set_module_by_name(model, layer_name, wrapper)
 
     setattr(model, "backend_summary", backend_by_layer)
