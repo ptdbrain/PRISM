@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import warnings
 
 import torch
 
@@ -36,35 +37,56 @@ def run_prism(
     if device == "cuda" and not torch.cuda.is_available():
         device = "cpu"
 
-    model = AutoModelForCausalLM.from_pretrained(model_name_or_path, torch_dtype=torch.float16)
-    model.to(device)
-    model.eval()
+    try:
+        model = AutoModelForCausalLM.from_pretrained(model_name_or_path, torch_dtype=torch.float16)
+        model.to(device)
+        model.eval()
+    except Exception as exc:
+        raise RuntimeError(f"Failed to load model '{model_name_or_path}': {exc}") from exc
 
-    mlp = load_pretrained_mlp(mlp_path)
-    profile = build_profile_dict(model, mlp, group_size=group_size)
+    try:
+        mlp = load_pretrained_mlp(mlp_path)
+        profile = build_profile_dict(model, mlp, group_size=group_size)
+    except Exception as exc:
+        raise RuntimeError(f"Profiling stage failed: {exc}") from exc
 
-    total_params = sum(int(v["num_params"]) for v in profile.values())
-    budget_bits = target_memory_budget_bits(profile, target_avg_bits)
-    bit_config = solve_lp(profile, budget_bits)
+    try:
+        total_params = sum(int(v["num_params"]) for v in profile.values())
+        budget_bits = target_memory_budget_bits(profile, target_avg_bits)
+        bit_config = solve_lp(profile, budget_bits)
+    except ValueError as exc:
+        raise RuntimeError(f"Assignment failed, likely infeasible budget: {exc}") from exc
+    except Exception as exc:
+        raise RuntimeError(f"Assignment stage failed: {exc}") from exc
 
-    precomputed = precompute_all(
-        model,
-        bits_list=[2, 3, 4],
-        group_size=group_size,
-        save_path=save_precomputed,
-    )
+    try:
+        precomputed = precompute_all(
+            model,
+            bits_list=[2, 3, 4],
+            group_size=group_size,
+            save_path=save_precomputed,
+        )
+    except Exception as exc:
+        raise RuntimeError(f"RTN precomputation failed: {exc}") from exc
 
-    bit_config = quic_refine(
-        model,
-        precomputed,
-        bit_config,
-        profile,
-        budget_bits=budget_bits,
-        max_iters=quic_iters,
-        n_samples=quic_samples,
-    )
+    try:
+        bit_config = quic_refine(
+            model,
+            precomputed,
+            bit_config,
+            profile,
+            budget_bits=budget_bits,
+            max_iters=quic_iters,
+            n_samples=quic_samples,
+        )
+    except Exception as exc:
+        warnings.warn(f"QUIC refinement failed; using pre-QUIC assignment: {exc}", RuntimeWarning)
 
-    prism_model = PRISMModel(model, precomputed, bit_config)
+    try:
+        prism_model = PRISMModel(model, precomputed, bit_config)
+    except Exception as exc:
+        raise RuntimeError(f"Failed to create PRISMModel: {exc}") from exc
+
     avg_bits = sum(bit_config[k] * int(profile[k]["num_params"]) for k in bit_config) / max(total_params, 1)
     avg_memory_bits = sum(layer_cost_from_profile(profile[k], bit_config[k]) for k in bit_config) / max(total_params, 1)
 
@@ -76,7 +98,10 @@ def run_prism(
         "profile": profile,
     }
     if return_pareto:
-        out["pareto_configs"] = pareto_configs(profile)
+        try:
+            out["pareto_configs"] = pareto_configs(profile)
+        except Exception as exc:
+            warnings.warn(f"Pareto frontier computation failed: {exc}", RuntimeWarning)
     return out
 
 

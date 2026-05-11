@@ -8,8 +8,11 @@ Priority order (highest to lowest):
 
 from __future__ import annotations
 
-import importlib.util
 import functools
+import importlib.util
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 @functools.lru_cache(maxsize=1)
@@ -35,8 +38,16 @@ def autogptq_available() -> bool:
     """
     try:
         from prism.kernels.autogptq.build import is_available
+
         return is_available()
-    except Exception:  # noqa: BLE001
+    except ImportError:
+        logger.debug("AutoGPTQ kernel build helper is not importable.")
+        return False
+    except RuntimeError as exc:
+        logger.warning("AutoGPTQ CUDA kernel availability check failed: %s", exc)
+        return False
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Unexpected AutoGPTQ availability error: %s: %s", type(exc).__name__, exc)
         return False
 
 
@@ -49,8 +60,16 @@ def rtn_custom_available() -> bool:
     """
     try:
         from prism.kernels.rtn.build import is_available
+
         return is_available()
-    except Exception:  # noqa: BLE001
+    except ImportError:
+        logger.debug("RTN custom kernel build helper is not importable.")
+        return False
+    except RuntimeError as exc:
+        logger.warning("RTN custom CUDA kernel availability check failed: %s", exc)
+        return False
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Unexpected RTN custom availability error: %s: %s", type(exc).__name__, exc)
         return False
 
 

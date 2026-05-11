@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import logging
+
 import torch
 
 from prism.assignment.memory import layer_cost_from_profile
 from prism.profile.inspect import iter_named_linear_layers
 from prism.quantization.rtn import dequantize_layer
+
+logger = logging.getLogger(__name__)
 
 
 def _hidden_dim(model: torch.nn.Module) -> int:
@@ -111,15 +115,58 @@ def quic_refine(
     max_iters: int = 3,
     n_samples: int = 4,
 ) -> dict[str, int]:
+    missing_profile = set(config) - set(profile)
+    if missing_profile:
+        raise ValueError(f"Profile missing layers required by assignment: {sorted(missing_profile)}")
+
+    missing_precomputed = set(config) - set(precomputed)
+    if missing_precomputed:
+        raise ValueError(
+            "Precomputed artifacts missing for layers: "
+            f"{sorted(missing_precomputed)}. Rerun RTN precomputation."
+        )
+
+    invalid_bits = sorted({int(bit) for bit in config.values() if int(bit) not in (2, 3, 4)})
+    if invalid_bits:
+        raise ValueError(f"Invalid bit-widths in config: {invalid_bits}. Must be 2, 3, or 4.")
+
+    for layer_name, bit in config.items():
+        if int(bit) not in precomputed[layer_name]:
+            raise ValueError(
+                f"Layer '{layer_name}' not precomputed at {int(bit)}-bit. "
+                f"Available: {sorted(precomputed[layer_name])}"
+            )
+
     cfg = dict(config)
     current_memory = sum(layer_cost_from_profile(profile[n], cfg[n]) for n in cfg)
-    if abs(budget_bits - current_memory) > 1e-3:
-        pass
-    for _ in range(max_iters):
+    if current_memory > budget_bits + 1e-3:
+        logger.warning(
+            "Initial QUIC assignment exceeds budget: %.2f > %.2f bits",
+            current_memory,
+            budget_bits,
+        )
+    elif abs(budget_bits - current_memory) > 1e-3:
+        logger.debug("Initial QUIC assignment under budget: %.2f < %.2f bits", current_memory, budget_bits)
+
+    for iteration in range(max_iters):
         deltas = measure_output_perturbation(model, precomputed, cfg, n_samples=n_samples)
         surprise = compute_surprise(deltas, profile, cfg)
         new_cfg = greedy_swap(cfg, surprise, profile, budget_bits)
         if new_cfg == cfg:
+            logger.debug("QUIC converged at iteration %d", iteration)
             break
         cfg = new_cfg
+
+        current_memory = sum(layer_cost_from_profile(profile[n], cfg[n]) for n in cfg)
+        if current_memory > budget_bits + 1e-3:
+            logger.warning(
+                "QUIC iteration %d exceeded budget: %.2f > %.2f bits",
+                iteration,
+                current_memory,
+                budget_bits,
+            )
+
+    final_memory = sum(layer_cost_from_profile(profile[n], cfg[n]) for n in cfg)
+    if final_memory > budget_bits + 1e-3:
+        raise ValueError(f"QUIC final assignment exceeds budget: {final_memory:.2f} > {budget_bits:.2f} bits")
     return cfg

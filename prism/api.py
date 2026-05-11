@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from prism.assign.optimize import assign_bits
@@ -13,6 +14,8 @@ from prism.quic.pipeline import run_quic_correction
 from prism.rtn.precompute import precompute_model_rtn
 from prism.runtime.assemble import assemble_runtime_model
 from prism.support.model_loading import load_model_bundle
+
+logger = logging.getLogger(__name__)
 
 
 class PRISM:
@@ -86,40 +89,60 @@ class PRISM:
         quic_path = self.artifact_dir / "quic_assignment.json"
         rtn_dir = self.artifact_dir / "rtn"
 
-        profile = profile_model(
-            model=self.bundle.model,
-            checkpoint_dir=resolved_checkpoint,
-            mlp_path=resolved_mlp,
-            output_path=profile_path,
-            model_id=self.bundle.model_id,
-            model_family=self.bundle.model_family,
-            group_size=group_size,
-        )
-        assignment = assign_bits(profile, target_average_bits=target_bits)
-        save_json(assignment_path, assignment)
+        try:
+            profile = profile_model(
+                model=self.bundle.model,
+                checkpoint_dir=resolved_checkpoint,
+                mlp_path=resolved_mlp,
+                output_path=profile_path,
+                model_id=self.bundle.model_id,
+                model_family=self.bundle.model_family,
+                group_size=group_size,
+            )
+        except Exception as exc:
+            raise RuntimeError(f"Stage 1 (Profiling) failed: {exc}") from exc
 
-        quic_assignment = run_quic_correction(
-            model=self.bundle.model,
-            profile_artifact=profile,
-            assignment=assignment,
-            hidden_size=self.bundle.hidden_size or 8,
-            seq_len=4,
-            rounds=quic_rounds,
-            group_size=group_size,
-        )
-        save_json(quic_path, quic_assignment)
+        try:
+            assignment = assign_bits(profile, target_average_bits=target_bits)
+            save_json(assignment_path, assignment)
+        except ValueError as exc:
+            raise RuntimeError(f"Stage 2 (Assignment) failed, likely infeasible budget: {exc}") from exc
+        except Exception as exc:
+            raise RuntimeError(f"Stage 2 (Assignment) failed: {exc}") from exc
 
-        manifest = precompute_model_rtn(
-            model=self.bundle.model,
-            output_dir=rtn_dir,
-            group_size=group_size,
-        )
-        runtime_model, runtime_summary = assemble_runtime_model(
-            base_model=self.bundle.model,
-            manifest=manifest,
-            assignment=quic_assignment,
-            artifact_root=rtn_dir,
-        )
+        try:
+            quic_assignment = run_quic_correction(
+                model=self.bundle.model,
+                profile_artifact=profile,
+                assignment=assignment,
+                hidden_size=self.bundle.hidden_size or 8,
+                seq_len=4,
+                rounds=quic_rounds,
+                group_size=group_size,
+            )
+            save_json(quic_path, quic_assignment)
+        except Exception as exc:
+            logger.warning("Stage 2.5 (QUIC) failed; using pre-QUIC assignment: %s", exc)
+            quic_assignment = assignment
+
+        try:
+            manifest = precompute_model_rtn(
+                model=self.bundle.model,
+                output_dir=rtn_dir,
+                group_size=group_size,
+            )
+        except Exception as exc:
+            raise RuntimeError(f"Stage 3 (RTN precomputation) failed: {exc}") from exc
+
+        try:
+            runtime_model, runtime_summary = assemble_runtime_model(
+                base_model=self.bundle.model,
+                manifest=manifest,
+                assignment=quic_assignment,
+                artifact_root=rtn_dir,
+            )
+        except Exception as exc:
+            raise RuntimeError(f"Stage 4 (Runtime assembly) failed: {exc}") from exc
         setattr(runtime_model, "backend_summary", runtime_summary["backend_by_layer"])
 
         self.last_run = {

@@ -31,9 +31,15 @@ _autogptq_kernel = None
 
 try:
     from prism.kernels.autogptq.build import get_kernel
+
     _autogptq_kernel = get_kernel()
-except Exception:  # noqa: BLE001
-    pass
+    logger.debug("AutoGPTQ kernel loaded successfully")
+except ImportError:
+    logger.debug("AutoGPTQ kernel is not installed; RTNAutoGPTQLinear will use GEMM fallback")
+except RuntimeError as exc:
+    logger.warning("AutoGPTQ CUDA kernel load failed: %s; falling back to GEMM", exc)
+except Exception as exc:  # noqa: BLE001
+    logger.error("Unexpected AutoGPTQ kernel load error: %s: %s", type(exc).__name__, exc)
 
 
 def autogptq_kernel_available() -> bool:
