@@ -1,0 +1,51 @@
+cd d:/PaperResearch/Quantization/PRISM/bash
+bash run_full_pipeline.sh \
+  --model "Qwen/Qwen2.5-1.5B" \
+  --stage0-models "facebook/opt-125m,EleutherAI/pythia-160m" \
+  --out-root "artifacts/prism" \
+  --run-stage0 \
+  --stage0-use-shards \
+  --num-shards 16 \
+  --start-shard 0 \
+  --end-shard 16 \
+  --epochs 100 \
+  --group-size 128 \
+  --hidden-size 16 \
+  --num-layers 4 \
+  --seq-len 8 \
+  --device cuda \
+  --family auto \
+  --budget 3.0 \
+  --budgets "2.5,2.75,3.0,3.25,3.5" \
+  --execute \
+  --trust-remote-code \
+  --prompt "Hello, how are you?" \
+  --max-new-tokens 32
+
+
+
+
+
+cd /d d:\PaperResearch\Quantization\PRISM\bash
+run_full_pipeline.bat ^
+  --model "Qwen/Qwen2.5-1.5B" ^
+  --stage0-models "facebook/opt-125m,EleutherAI/pythia-160m" ^
+  --out-root "artifacts\prism" ^
+  --run-stage0 ^
+  --stage0-use-shards ^
+  --num-shards 16 ^
+  --start-shard 0 ^
+  --end-shard 16 ^
+  --epochs 100 ^
+  --group-size 128 ^
+  --hidden-size 16 ^
+  --num-layers 4 ^
+  --seq-len 8 ^
+  --device cuda ^
+  --family auto ^
+  --budget 3.0 ^
+  --budgets "2.5,2.75,3.0,3.25,3.5" ^
+  --execute ^
+  --trust-remote-code ^
+  --prompt "Hello, how are you?" ^
+  --max-new-tokens 32
