@@ -13,6 +13,12 @@ import prism.profiling.sensitivity as sensitivity_mod
 from prism.profiling.meta_learner import train_meta_learner
 from prism.profiling.sensitivity import build_training_dataset
 
+try:
+    from tqdm.auto import tqdm
+except ImportError:  # pragma: no cover - tqdm is a project dependency
+    def tqdm(iterable, *args, **kwargs):
+        return iterable
+
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run sharded PRISM Stage 0 dataset generation.")
@@ -50,6 +56,7 @@ def _restore_iterator(original_iter) -> None:
 
 
 def _merge_and_train(out_dir: Path, num_shards: int, epochs: int) -> None:
+    print(f"Stage 0 merge: checking {num_shards} shards in {out_dir}")
     paths = [out_dir / f"train_shard_{idx:02d}_of_{num_shards}.pt" for idx in range(num_shards)]
     missing = [str(path) for path in paths if not path.exists()]
     if missing:
@@ -61,7 +68,7 @@ def _merge_and_train(out_dir: Path, num_shards: int, epochs: int) -> None:
 
     xs, ys, metas = [], [], []
     feature_order = None
-    for path in paths:
+    for path in tqdm(paths, desc="Stage 0 merge shards", unit="shard"):
         bundle = torch.load(path, map_location="cpu", weights_only=False)
         xs.append(bundle["X"].cpu())
         ys.append(bundle["Y"].cpu())
@@ -76,7 +83,10 @@ def _merge_and_train(out_dir: Path, num_shards: int, epochs: int) -> None:
     }
     merged_path = out_dir / "prism_train_data.pt"
     torch.save(merged, merged_path)
+    print(f"Stage 0 merge: wrote merged dataset to {merged_path}")
+    print("Stage 0 train: training merged meta-learner")
     train_meta_learner(str(merged_path), epochs=epochs, save_path=str(out_dir / "prism_mlp.pt"))
+    print("Stage 0 train: finished merged meta-learner")
     print(
         {
             "dataset_path": str(merged_path),
@@ -98,7 +108,12 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     end_shard = args.num_shards if args.end_shard is None else args.end_shard
 
-    for shard_id in range(args.start_shard, end_shard):
+    shard_ids = list(range(args.start_shard, end_shard))
+    print(
+        f"Stage 0 shards: collecting {len(shard_ids)} shard(s) "
+        f"from {args.start_shard} to {end_shard - 1}"
+    )
+    for shard_id in tqdm(shard_ids, desc="Stage 0 shard jobs", unit="shard"):
         if shard_id < 0 or shard_id >= args.num_shards:
             raise ValueError(f"shard id {shard_id} is outside [0, {args.num_shards}).")
         shard_path = out_dir / f"train_shard_{shard_id:02d}_of_{args.num_shards}.pt"
@@ -106,6 +121,7 @@ def main() -> None:
             print(f"skip existing {shard_path}")
             continue
 
+        print(f"Stage 0 shard {shard_id + 1}/{args.num_shards}: collecting sensitivity data")
         original_iter = _patch_shard_iterator(args.num_shards, shard_id)
         try:
             build_training_dataset(
@@ -116,7 +132,9 @@ def main() -> None:
             )
         finally:
             _restore_iterator(original_iter)
+        print(f"Stage 0 shard {shard_id + 1}/{args.num_shards}: wrote {shard_path}")
 
+    print("Stage 0 shards: finished requested shard range")
     _merge_and_train(out_dir, args.num_shards, args.epochs)
 
 

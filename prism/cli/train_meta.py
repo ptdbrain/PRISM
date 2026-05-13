@@ -25,18 +25,24 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.dataset_path is None:
         model_names = args.model_names or ["__prism_mock_ten_layers__"]
+        print(f"Stage 0 dataset: collecting sensitivity data for {len(model_names)} model(s)")
         build_training_dataset(
             model_name_list=list(model_names),
             group_size=args.group_size,
             save_path=str(dataset_path),
         )
+        print(f"Stage 0 dataset: wrote {dataset_path}")
+    else:
+        print(f"Stage 0 dataset: reusing {dataset_path}")
 
     mlp_path = output_dir / "prism_mlp.pt"
+    print(f"Stage 0 train: training meta-learner for {args.epochs} epoch(s)")
     train_meta_learner(
         dataset_path=str(dataset_path),
         epochs=args.epochs,
         save_path=str(mlp_path),
     )
+    print(f"Stage 0 train: wrote {mlp_path}")
     print(
         json.dumps(
             {

@@ -159,7 +159,7 @@ run_stage0_shards() {
   if [[ "$DRY_RUN" != "1" ]]; then
     mkdir -p "$STAGE0_DIR"
   fi
-  run_cmd python3 scripts/stage0_sharded.py \
+  run_cmd python3 ../scripts/stage0_sharded.py \
     --models "$STAGE0_MODELS" \
     --output-dir "$STAGE0_DIR" \
     --num-shards "$NUM_SHARDS" \

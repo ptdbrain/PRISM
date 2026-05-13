@@ -25,6 +25,12 @@ from prism.rtn.pack import pack_qweight_for_storage
 from prism.rtn.pack_gptq import pack_for_autogptq
 from prism.rtn.quantize import quantize_rtn
 
+try:
+    from tqdm.auto import tqdm
+except ImportError:  # pragma: no cover - tqdm is a project dependency
+    def tqdm(iterable, *args, **kwargs):
+        return iterable
+
 
 def precompute_model_rtn(
     model,
@@ -51,11 +57,12 @@ def precompute_model_rtn(
         "layers": {},
     }
 
-    for layer_name, module in iter_named_linear_layers(model):
+    layer_items = list(iter_named_linear_layers(model))
+    for layer_name, module in tqdm(layer_items, desc="Stage 3 RTN layers", unit="layer"):
         normalized_name = layer_name.replace(".", "__")
         manifest["layers"][layer_name] = {}
 
-        for bit in bits:
+        for bit in tqdm(bits, desc=f"Stage 3 bits for {layer_name}", unit="bit", leave=False):
             quantized = quantize_rtn(module.weight.detach(), bits=bit, group_size=group_size)
             layer_dir = output_dir / "layers" / normalized_name / f"{bit}bit"
             layer_dir.mkdir(parents=True, exist_ok=True)

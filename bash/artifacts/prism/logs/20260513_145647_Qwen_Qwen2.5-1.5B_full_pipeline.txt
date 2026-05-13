@@ -1,0 +1,48 @@
+[Wed 05/13/2026 14:56:47.93] PRISM full pipeline
+[Wed 05/13/2026 14:56:47.93] Repo: D:\PaperResearch\Quantization\PRISM\bash
+[Wed 05/13/2026 14:56:47.94] Target model: Qwen/Qwen2.5-1.5B
+[Wed 05/13/2026 14:56:47.94] Run dir: artifacts\prism\Qwen_Qwen2.5-1.5B_full
+[Wed 05/13/2026 14:56:47.95] Log file: artifacts\prism\logs\20260513_145647_Qwen_Qwen2.5-1.5B_full_pipeline.txt
+[Wed 05/13/2026 14:56:47.96] ==== Stage 0 SKIP: Using existing MLP at D:\PaperResearch\Quantization\PRISM\artifacts\prism\merged_model2\prism_mlp.pt ====
+
+[Wed 05/13/2026 14:56:47.97] ==== Stage 1 START: Profile model layers and predict sensitivity ====
+
+[Wed 05/13/2026 14:56:47.99] + python -m prism.cli.profile --model-id-or-path "Qwen/Qwen2.5-1.5B" --family "auto" --mlp-path "D:\PaperResearch\Quantization\PRISM\artifacts\prism\merged_model2\prism_mlp.pt" --group-size "128" --hidden-size "16" --num-layers "4" --device "cuda" --output-path "artifacts\prism\Qwen_Qwen2.5-1.5B_full\profile.json" --trust-remote-code
+[Wed 05/13/2026 14:56:50.50] ==== Stage 1 DONE: Profile written to artifacts\prism\Qwen_Qwen2.5-1.5B_full\profile.json ====
+
+[Wed 05/13/2026 14:56:50.51] ==== Stage 2 START: Solve mixed-bit assignments ====
+[Wed 05/13/2026 14:56:50.52] Stage 2 main budget: 3.0
+
+[Wed 05/13/2026 14:56:50.55] + python -m prism.cli.assign --profile-path "artifacts\prism\Qwen_Qwen2.5-1.5B_full\profile.json" --budget "3.0" --output-path "artifacts\prism\Qwen_Qwen2.5-1.5B_full\assignment_3.0.json"
+[Wed 05/13/2026 14:56:52.85] Stage 2 sweep budget: 2.5
+
+[Wed 05/13/2026 14:56:52.87] + python -m prism.cli.assign --profile-path "artifacts\prism\Qwen_Qwen2.5-1.5B_full\profile.json" --budget "2.5" --output-path "artifacts\prism\Qwen_Qwen2.5-1.5B_full\assignment_2.5.json"
+[Wed 05/13/2026 14:56:55.10] Stage 2 sweep budget: 2.75
+
+[Wed 05/13/2026 14:56:55.11] + python -m prism.cli.assign --profile-path "artifacts\prism\Qwen_Qwen2.5-1.5B_full\profile.json" --budget "2.75" --output-path "artifacts\prism\Qwen_Qwen2.5-1.5B_full\assignment_2.75.json"
+[Wed 05/13/2026 14:56:57.28] Stage 2 sweep budget: 3.25
+
+[Wed 05/13/2026 14:56:57.29] + python -m prism.cli.assign --profile-path "artifacts\prism\Qwen_Qwen2.5-1.5B_full\profile.json" --budget "3.25" --output-path "artifacts\prism\Qwen_Qwen2.5-1.5B_full\assignment_3.25.json"
+[Wed 05/13/2026 14:56:59.49] Stage 2 sweep budget: 3.5
+
+[Wed 05/13/2026 14:56:59.51] + python -m prism.cli.assign --profile-path "artifacts\prism\Qwen_Qwen2.5-1.5B_full\profile.json" --budget "3.5" --output-path "artifacts\prism\Qwen_Qwen2.5-1.5B_full\assignment_3.5.json"
+[Wed 05/13/2026 14:57:01.69] ==== Stage 2 DONE: Assignments written under artifacts\prism\Qwen_Qwen2.5-1.5B_full ====
+
+[Wed 05/13/2026 14:57:01.70] + python -m prism.cli.quic --model-id-or-path "Qwen/Qwen2.5-1.5B" --family "auto" --device "cuda" --profile-path "artifacts\prism\Qwen_Qwen2.5-1.5B_full\profile.json" --assignment-path "artifacts\prism\Qwen_Qwen2.5-1.5B_full\assignment_3.0.json" --output-path "artifacts\prism\Qwen_Qwen2.5-1.5B_full\quic_assignment_3.0.json" --hidden-size "16" --seq-len "8" --trust-remote-code
+[Wed 05/13/2026 14:57:03.91] ==== Stage 2.5 DONE: QUIC assignment written to artifacts\prism\Qwen_Qwen2.5-1.5B_full\quic_assignment_3.0.json ====
+
+[Wed 05/13/2026 14:57:03.92] ==== Stage 3 START: Precompute RTN artifacts ====
+
+[Wed 05/13/2026 14:57:03.94] + python -m prism.cli.precompute_rtn --model-id-or-path "Qwen/Qwen2.5-1.5B" --family "auto" --device "cuda" --group-size "128" --hidden-size "16" --num-layers "4" --output-dir "artifacts\prism\Qwen_Qwen2.5-1.5B_full\rtn" --trust-remote-code
+[Wed 05/13/2026 14:57:06.20] ==== Stage 3 DONE: RTN artifacts written to artifacts\prism\Qwen_Qwen2.5-1.5B_full\rtn ====
+
+[Wed 05/13/2026 14:57:06.22] ==== Stage 4 START: Assemble runtime model ====
+
+[Wed 05/13/2026 14:57:06.25] + python -m prism.cli.run --model-id-or-path "Qwen/Qwen2.5-1.5B" --family "auto" --device "cuda" --artifact-root "artifacts\prism\Qwen_Qwen2.5-1.5B_full\rtn" --assignment-path "artifacts\prism\Qwen_Qwen2.5-1.5B_full\quic_assignment_3.0.json" --hidden-size "16" --num-layers "4" --prompt "Hello, how are you?" --max-new-tokens "32"  --trust-remote-code
+[Wed 05/13/2026 14:57:10.13] ==== Stage 4 DONE: Runtime assembly completed ====
+
+[Wed 05/13/2026 14:57:10.15] Done.
+[Wed 05/13/2026 14:57:10.16] Profile: artifacts\prism\Qwen_Qwen2.5-1.5B_full\profile.json
+[Wed 05/13/2026 14:57:10.17] Assignment: artifacts\prism\Qwen_Qwen2.5-1.5B_full\assignment_3.0.json
+[Wed 05/13/2026 14:57:10.19] Final assignment: artifacts\prism\Qwen_Qwen2.5-1.5B_full\quic_assignment_3.0.json
+[Wed 05/13/2026 14:57:10.20] Log file: artifacts\prism\logs\20260513_145647_Qwen_Qwen2.5-1.5B_full_pipeline.txt

@@ -12,6 +12,12 @@ from prism.profile.inspect import iter_named_linear_layers
 from prism.profiling.features import FEATURE_NAMES, LEGACY_FEATURE_NAMES, extract_feature_dict, extract_features
 from prism.assignment.memory import memory_costs_by_bit
 
+try:
+    from tqdm.auto import tqdm
+except ImportError:  # pragma: no cover - tqdm is a project dependency
+    def tqdm(iterable, *args, **kwargs):
+        return iterable
+
 
 class SensitivityMLP(nn.Module):
     """
@@ -99,7 +105,7 @@ def train_meta_learner(
     mlp = SensitivityMLP(input_dim=X.shape[1])
     opt = torch.optim.Adam(mlp.parameters(), lr=lr)
     mlp.train()
-    for _ in range(epochs):
+    for _ in tqdm(range(epochs), desc="Stage 0 train MLP", unit="epoch"):
         opt.zero_grad()
         pred = mlp(Xn)
         log_pred = torch.log(pred + 1e-10)
@@ -159,7 +165,9 @@ def profile_model(model: torch.nn.Module, mlp: SensitivityMLP, group_size: int =
     layer_rows: list[tuple[str, dict[int, float], tuple[int, int], int, dict[str, float], dict[int, int]]] = []
     layer_items = list(iter_named_linear_layers(model))
     feature_order = tuple(getattr(mlp, "feature_order", FEATURE_NAMES))
-    for layer_index, (layer_name, module) in enumerate(layer_items):
+    for layer_index, (layer_name, module) in enumerate(
+        tqdm(layer_items, desc="Stage 1 profile layers", unit="layer")
+    ):
         W = module.weight.detach()
         feat = extract_features(
             W,

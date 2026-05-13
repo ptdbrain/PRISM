@@ -24,6 +24,12 @@ from prism.runtime.marlin import RTNMarlinLinear
 from prism.runtime.autogptq import RTNAutoGPTQLinear
 from prism.runtime.rtn_custom import RTNCustomLinear
 
+try:
+    from tqdm.auto import tqdm
+except ImportError:  # pragma: no cover - tqdm is a project dependency
+    def tqdm(iterable, *args, **kwargs):
+        return iterable
+
 
 def _set_module_by_name(root, name: str, module) -> None:
     parts = name.split(".")
@@ -115,7 +121,7 @@ def assemble_runtime_model(
     chosen_assignment = _validate_runtime_inputs(layer_names, manifest, assignment, artifact_root)
     group_size = int(manifest["group_size"])
 
-    for layer_name, current_module in layer_items:
+    for layer_name, current_module in tqdm(layer_items, desc="Stage 4 assemble layers", unit="layer"):
         bit = int(chosen_assignment[layer_name])
         layer_entry = manifest["layers"][layer_name][str(bit)]
         qweight = torch.load(artifact_root / layer_entry["qweight_path"], map_location="cpu")

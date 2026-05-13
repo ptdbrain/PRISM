@@ -12,6 +12,12 @@ from prism.quantization.rtn import dequantize_layer
 
 logger = logging.getLogger(__name__)
 
+try:
+    from tqdm.auto import tqdm
+except ImportError:  # pragma: no cover - tqdm is a project dependency
+    def tqdm(iterable, *args, **kwargs):
+        return iterable
+
 
 def _hidden_dim(model: torch.nn.Module) -> int:
     for _, module in iter_named_linear_layers(model):
@@ -30,7 +36,8 @@ def measure_output_perturbation(
     x = torch.randn(n_samples, seq_len, hidden, dtype=torch.float32)
     xf = x.reshape(-1, hidden)
     deltas: dict[str, float] = {}
-    for layer_name, module in iter_named_linear_layers(model):
+    layer_items = list(iter_named_linear_layers(model))
+    for layer_name, module in tqdm(layer_items, desc="Stage 2.5 QUIC layer deltas", unit="layer", leave=False):
         bits = int(config[layer_name])
         pack = precomputed[layer_name][bits]
         W = module.weight.detach().float()
@@ -148,7 +155,7 @@ def quic_refine(
     elif abs(budget_bits - current_memory) > 1e-3:
         logger.debug("Initial QUIC assignment under budget: %.2f < %.2f bits", current_memory, budget_bits)
 
-    for iteration in range(max_iters):
+    for iteration in tqdm(range(max_iters), desc="Stage 2.5 QUIC iterations", unit="iter"):
         deltas = measure_output_perturbation(model, precomputed, cfg, n_samples=n_samples)
         surprise = compute_surprise(deltas, profile, cfg)
         new_cfg = greedy_swap(cfg, surprise, profile, budget_bits)

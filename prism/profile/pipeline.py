@@ -11,6 +11,12 @@ from prism.profiling.meta_learner import load_pretrained_mlp, profile_model as s
 from prism.assignment.memory import memory_costs_by_bit
 from prism.support.naming import module_type_from_name
 
+try:
+    from tqdm.auto import tqdm
+except ImportError:  # pragma: no cover - tqdm is a project dependency
+    def tqdm(iterable, *args, **kwargs):
+        return iterable
+
 
 def build_profile_artifact(
     model,
@@ -25,7 +31,7 @@ def build_profile_artifact(
     profile = spec_profile_model(model, mlp, group_size=group_size)
 
     layer_records: list[ProfileLayerRecord] = []
-    for layer_name, info in profile.items():
+    for layer_name, info in tqdm(profile.items(), desc="Stage 1 build profile artifact", unit="layer"):
         sens = info["sensitivity"]
         layer_records.append(
             ProfileLayerRecord(
@@ -71,7 +77,9 @@ def profile_model_legacy(
     from prism.profile.inspect import iter_named_linear_layers
 
     layer_items = list(iter_named_linear_layers(model))
-    for layer_index, (layer_name, module) in enumerate(layer_items):
+    for layer_index, (layer_name, module) in enumerate(
+        tqdm(layer_items, desc="Stage 1 legacy profile layers", unit="layer")
+    ):
         features = compute_zero_cost_features(
             module.weight.detach(),
             layer_name=layer_name,
