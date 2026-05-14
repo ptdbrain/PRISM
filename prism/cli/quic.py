@@ -42,3 +42,7 @@ def main(argv: list[str] | None = None) -> None:
     )
     save_json(Path(args.output_path), corrected)
     print(json.dumps(corrected, indent=2))
+
+
+if __name__ == "__main__":
+    main()

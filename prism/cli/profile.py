@@ -52,3 +52,7 @@ def main(argv: list[str] | None = None) -> None:
         parser.error("Provide either --mlp-path (recommended) or --checkpoint-dir (legacy).")
 
     print(json.dumps(artifact.to_dict(), indent=2))
+
+
+if __name__ == "__main__":
+    main()

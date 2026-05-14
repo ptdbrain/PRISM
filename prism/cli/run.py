@@ -74,3 +74,7 @@ def main(argv: list[str] | None = None) -> None:
         summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
     print(json.dumps(summary, indent=2))
+
+
+if __name__ == "__main__":
+    main()

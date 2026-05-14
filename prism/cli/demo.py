@@ -35,3 +35,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--output-root", required=True)
     args = parser.parse_args(argv)
     print(json.dumps(run_demo(Path(args.output_root)), indent=2))
+
+
+if __name__ == "__main__":
+    main()

@@ -28,3 +28,7 @@ def main(argv: list[str] | None = None) -> None:
 
     save_json(Path(args.output_path), result)
     print(json.dumps(result, indent=2))
+
+
+if __name__ == "__main__":
+    main()

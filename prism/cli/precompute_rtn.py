@@ -36,3 +36,7 @@ def main(argv: list[str] | None = None) -> None:
         group_size=args.group_size,
     )
     print(json.dumps(manifest, indent=2))
+
+
+if __name__ == "__main__":
+    main()
