@@ -96,6 +96,9 @@ def train_meta_learner(
     bundle = torch.load(dataset_path, map_location="cpu", weights_only=False)
     X = bundle["X"].float()
     Y = bundle["Y"].float()
+    eps = 1e-10
+    X = torch.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+    Y = torch.nan_to_num(Y, nan=eps, posinf=1e6, neginf=eps).clamp_min(eps)
     feature_order = tuple(bundle.get("feature_order") or _feature_order_for_dim(X.shape[1]))
 
     feat_mean = X.mean(dim=0, keepdim=True)
@@ -108,8 +111,8 @@ def train_meta_learner(
     for _ in tqdm(range(epochs), desc="Stage 0 train MLP", unit="epoch"):
         opt.zero_grad()
         pred = mlp(Xn)
-        log_pred = torch.log(pred + 1e-10)
-        log_target = torch.log(Y + 1e-10)
+        log_pred = torch.log(pred + eps)
+        log_target = torch.log(Y)
         loss = F.mse_loss(log_pred, log_target)
         if ranking_weight > 0:
             loss = loss + float(ranking_weight) * _ranking_loss(log_pred, log_target)
@@ -135,6 +138,22 @@ def train_meta_learner(
 
 def load_pretrained_mlp(mlp_path: str = "prism_mlp.pt") -> SensitivityMLP:
     checkpoint = torch.load(mlp_path, map_location="cpu", weights_only=False)
+    nonfinite = [
+        name
+        for name, tensor in checkpoint["state_dict"].items()
+        if not torch.isfinite(tensor.float()).all()
+    ]
+    if nonfinite:
+        names = ", ".join(nonfinite[:5])
+        raise ValueError(
+            f"Invalid PRISM MLP checkpoint contains non-finite tensors: {names}. "
+            "Retrain prism_mlp.pt with the current Stage 0 trainer."
+        )
+    if (
+        not torch.isfinite(checkpoint["feat_mean"].float()).all()
+        or not torch.isfinite(checkpoint["feat_std"].float()).all()
+    ):
+        raise ValueError("Invalid PRISM MLP checkpoint contains non-finite feature normalization tensors.")
     input_dim = int(checkpoint["state_dict"]["net.0.weight"].shape[1])
     feature_order = _feature_order_for_dim(input_dim, checkpoint)
     mlp = SensitivityMLP(input_dim=input_dim)

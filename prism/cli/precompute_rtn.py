@@ -34,6 +34,7 @@ def main(argv: list[str] | None = None) -> None:
         model=bundle.model,
         output_dir=Path(args.output_dir),
         group_size=args.group_size,
+        model_id=bundle.model_id,
     )
     print(json.dumps(manifest, indent=2))
 

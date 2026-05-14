@@ -130,6 +130,7 @@ class PRISM:
                 model=self.bundle.model,
                 output_dir=rtn_dir,
                 group_size=group_size,
+                model_id=self.bundle.model_id,
             )
         except Exception as exc:
             raise RuntimeError(f"Stage 3 (RTN precomputation) failed: {exc}") from exc

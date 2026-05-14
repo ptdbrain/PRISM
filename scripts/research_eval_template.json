@@ -1,0 +1,85 @@
+{
+  "variants": {
+    "baseline_fp16": {
+      "config": {
+        "model_id": "Qwen/Qwen2.5-0.5B",
+        "method": "FP16 baseline",
+        "evaluator": "lm-eval or custom evaluator",
+        "num_fewshot": {
+          "mmlu": 5,
+          "gsm8k": 8,
+          "arc_challenge": 0,
+          "arc_easy": 0,
+          "hellaswag": 0
+        },
+        "seed": 0
+      },
+      "perplexity": {
+        "wikitext2": null,
+        "c4": null
+      },
+      "zero_shot": {
+        "mmlu": {
+          "accuracy": null
+        },
+        "gsm8k": {
+          "accuracy": null
+        },
+        "arc_challenge": {
+          "accuracy": null
+        },
+        "arc_easy": {
+          "accuracy": null
+        },
+        "hellaswag": {
+          "accuracy": null
+        }
+      },
+      "efficiency": {
+        "tokens_per_second": null,
+        "peak_memory_gb": null
+      }
+    },
+    "prism": {
+      "config": {
+        "model_id": "Qwen/Qwen2.5-0.5B",
+        "method": "PRISM mixed-bit",
+        "assignment": "assignment_3.0.json",
+        "evaluator": "lm-eval or custom evaluator",
+        "num_fewshot": {
+          "mmlu": 5,
+          "gsm8k": 8,
+          "arc_challenge": 0,
+          "arc_easy": 0,
+          "hellaswag": 0
+        },
+        "seed": 0
+      },
+      "perplexity": {
+        "wikitext2": null,
+        "c4": null
+      },
+      "zero_shot": {
+        "mmlu": {
+          "accuracy": null
+        },
+        "gsm8k": {
+          "accuracy": null
+        },
+        "arc_challenge": {
+          "accuracy": null
+        },
+        "arc_easy": {
+          "accuracy": null
+        },
+        "hellaswag": {
+          "accuracy": null
+        }
+      },
+      "efficiency": {
+        "tokens_per_second": null,
+        "peak_memory_gb": null
+      }
+    }
+  }
+}

@@ -66,6 +66,8 @@ class PipelineRunner:
         self.quic_path = self.run_dir / f"quic_assignment_{args.budget}.json"
         self.rtn_dir = self.run_dir / "rtn"
         self.runtime_summary_path = self.run_dir / "runtime_summary.json"
+        self.summary_json_path = self.run_dir / "summary_stats.json"
+        self.summary_md_path = self.run_dir / "summary_stats.md"
         self.mlp_path = Path(args.mlp_path) if args.mlp_path else self.stage0_dir / "prism_mlp.pt"
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.log_dir = self.out_root / "logs"
@@ -127,6 +129,35 @@ class PipelineRunner:
     def trust_flag(self) -> list[str]:
         return ["--trust-remote-code"] if self.args.trust_remote_code else []
 
+    def preflight_environment(self) -> None:
+        if self.args.dry_run or self.args.skip_env_check:
+            return
+
+        self.log()
+        self.log("==== Preflight START: Python and torch environment ====")
+        probe = (
+            "import sys\n"
+            "print('Python executable:', sys.executable)\n"
+            "print('Python version:', sys.version.split()[0])\n"
+            "try:\n"
+            "    import torch\n"
+            "except Exception as exc:\n"
+            "    raise SystemExit(f'Cannot import torch: {type(exc).__name__}: {exc}')\n"
+            "print('Torch version:', torch.__version__)\n"
+            "print('Torch CUDA build:', torch.version.cuda)\n"
+            "print('CUDA available:', torch.cuda.is_available())\n"
+            "print('CUDA device count:', torch.cuda.device_count())\n"
+            "if sys.argv[1].startswith('cuda'):\n"
+            "    if not torch.cuda.is_available():\n"
+            "        raise SystemExit('CUDA was requested but this Python environment has CPU-only torch or cannot access the NVIDIA driver.')\n"
+            "    if ':' in sys.argv[1]:\n"
+            "        index = int(sys.argv[1].split(':', 1)[1])\n"
+            "        if index >= torch.cuda.device_count():\n"
+            "            raise SystemExit(f'CUDA device index {index} is out of range for {torch.cuda.device_count()} visible device(s).')\n"
+        )
+        self.run_cmd(self.python_cmd("-c", probe, self.args.device))
+        self.log("==== Preflight DONE: environment is compatible with requested device ====")
+
     def run(self) -> None:
         os.chdir(self.repo_root)
         self.log_dir.mkdir(parents=True, exist_ok=True)
@@ -141,12 +172,14 @@ class PipelineRunner:
         if self.args.dry_run:
             self.log("mode: dry-run (commands are printed, not executed)")
 
+        self.preflight_environment()
         self.run_stage0()
         self.run_stage1()
         self.run_stage2()
         final_assignment = self.run_quic()
         self.run_rtn()
         self.run_stage4(final_assignment)
+        self.run_summary(final_assignment)
 
         self.log()
         self.log("Done.")
@@ -155,6 +188,8 @@ class PipelineRunner:
         self.log(f"Final assignment: {final_assignment}")
         self.log(f"RTN artifacts: {self.rtn_dir}")
         self.log(f"Runtime summary: {self.runtime_summary_path}")
+        self.log(f"Summary JSON: {self.summary_json_path}")
+        self.log(f"Summary report: {self.summary_md_path}")
         self.log(f"Log file: {self.log_path}")
 
     def run_stage0(self) -> None:
@@ -373,6 +408,31 @@ class PipelineRunner:
         self.expect_file(self.runtime_summary_path)
         self.stage_done("4", "Runtime assembly completed")
 
+    def run_summary(self, final_assignment: Path) -> None:
+        if not self.args.run_summary:
+            self.stage_skip("5", "Run summary skipped")
+            return
+        self.stage_start("5", "Summarize artifacts and effectiveness metadata")
+        cmd = self.python_cmd(
+            "scripts/summarize_pipeline_run.py",
+            "--run-dir",
+            str(self.run_dir),
+            "--assignment-path",
+            str(final_assignment),
+            "--output-json",
+            str(self.summary_json_path),
+            "--output-md",
+            str(self.summary_md_path),
+            "--quiet",
+        )
+        eval_results = _split_csv(self.args.eval_results)
+        if eval_results:
+            cmd.extend(["--eval-results", *eval_results])
+        self.run_cmd(cmd)
+        self.expect_file(self.summary_json_path)
+        self.expect_file(self.summary_md_path)
+        self.stage_done("5", f"Summary report written to {self.summary_md_path}")
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the full PRISM pipeline.")
@@ -401,11 +461,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--skip-quic", action="store_false", dest="run_quic", default=_env_bool("RUN_QUIC", True))
     parser.add_argument("--skip-rtn", action="store_false", dest="run_rtn", default=_env_bool("RUN_RTN", True))
     parser.add_argument("--skip-run", action="store_false", dest="run_stage4", default=_env_bool("RUN_STAGE4", True))
+    parser.add_argument("--skip-summary", action="store_false", dest="run_summary", default=_env_bool("RUN_SUMMARY", True))
+    parser.add_argument("--eval-results", nargs="*", default=os.environ.get("RESEARCH_EVAL_RESULTS"))
     parser.add_argument("--execute", action="store_true", default=_env_bool("PRISM_EXECUTE"))
     parser.add_argument("--trust-remote-code", action="store_true", default=_env_bool("TRUST_REMOTE_CODE"))
     parser.add_argument("--prompt", default=_env("PRISM_PROMPT", "Hello"))
     parser.add_argument("--max-new-tokens", type=int, default=int(_env("MAX_NEW_TOKENS", "16")))
     parser.add_argument("--dry-run", action="store_true", default=_env_bool("DRY_RUN"))
+    parser.add_argument("--skip-env-check", action="store_true", default=_env_bool("SKIP_ENV_CHECK"))
     return parser
 
 

@@ -37,6 +37,7 @@ def precompute_model_rtn(
     output_dir: Path,
     group_size: int = 128,
     bits: tuple[int, ...] = (2, 3, 4),
+    model_id: str | None = None,
 ) -> dict[str, object]:
     """Quantize all linear layers and save RTN + AutoGPTQ-packed artifacts.
 
@@ -47,8 +48,14 @@ def precompute_model_rtn(
         and backend compatibility flags.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
+    resolved_model_id = (
+        model_id
+        or getattr(getattr(model, "config", None), "name_or_path", None)
+        or getattr(getattr(model, "config", None), "_name_or_path", None)
+        or model.__class__.__name__
+    )
     manifest: dict[str, object] = {
-        "model_id": "mock-transformer",
+        "model_id": str(resolved_model_id),
         "artifact_root": str(output_dir),
         "group_size": group_size,
         "dtype": "int16",
