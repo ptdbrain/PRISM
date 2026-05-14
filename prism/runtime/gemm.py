@@ -9,10 +9,19 @@ from prism.rtn.quantize import dequantize_rtn
 
 
 class RTNGemmLinear(nn.Module):
-    def __init__(self, qweight, scales, bits: int, group_size: int, shape: list[int]) -> None:
+    def __init__(
+        self,
+        qweight,
+        scales,
+        bits: int,
+        group_size: int,
+        shape: list[int],
+        bias: torch.Tensor | None = None,
+    ) -> None:
         super().__init__()
         self.register_buffer("qweight", qweight)
         self.register_buffer("scales", scales)
+        self.register_buffer("bias", None if bias is None else bias.detach().clone())
         self.bits = bits
         self.group_size = group_size
         self.shape = shape
@@ -25,4 +34,7 @@ class RTNGemmLinear(nn.Module):
             group_size=self.group_size,
             shape=self.shape,
         )
-        return x @ weight.t()
+        output = x @ weight.to(device=x.device, dtype=x.dtype).t()
+        if self.bias is not None:
+            output = output + self.bias.to(device=output.device, dtype=output.dtype)
+        return output

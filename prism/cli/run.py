@@ -26,6 +26,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--prompt", type=str, default="Hello")
     parser.add_argument("--max-new-tokens", type=int, default=16)
+    parser.add_argument("--summary-path", type=str, default=None, help="Optional JSON file for runtime summary.")
     args = parser.parse_args(argv)
 
     artifact_root = Path(args.artifact_root)
@@ -43,7 +44,13 @@ def main(argv: list[str] | None = None) -> None:
     )
     manifest = load_manifest(manifest_path)
     assignment = load_json(Path(args.assignment_path))
-    runtime_model, summary = assemble_runtime_model(bundle.model, manifest, assignment, artifact_root)
+    runtime_model, summary = assemble_runtime_model(
+        bundle.model,
+        manifest,
+        assignment,
+        artifact_root,
+        copy_model=False,
+    )
 
     if args.execute:
         if bundle.is_demo:
@@ -60,5 +67,10 @@ def main(argv: list[str] | None = None) -> None:
                 prompt=args.prompt,
                 max_new_tokens=args.max_new_tokens,
             )
+
+    if args.summary_path:
+        summary_path = Path(args.summary_path)
+        summary_path.parent.mkdir(parents=True, exist_ok=True)
+        summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
     print(json.dumps(summary, indent=2))

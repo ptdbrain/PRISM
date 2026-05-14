@@ -71,6 +71,7 @@ class RTNMarlinLinear(nn.Module):
         bits: int,
         group_size: int,
         shape: list[int],
+        bias: torch.Tensor | None = None,
         *,
         marlin_qweight: torch.Tensor | None = None,
         marlin_scales: torch.Tensor | None = None,
@@ -81,6 +82,7 @@ class RTNMarlinLinear(nn.Module):
         # --- Always keep the raw RTN tensors for fallback dequant path ---
         self.register_buffer("qweight", qweight)
         self.register_buffer("scales", scales)
+        self.register_buffer("bias", None if bias is None else bias.detach().clone())
         self.bits = bits
         self.group_size = group_size
         self.shape = shape
@@ -155,7 +157,7 @@ class RTNMarlinLinear(nn.Module):
                 8,    # max_par
             )
 
-        return output.reshape(*orig_shape[:-1], out_features)
+        return self._apply_bias(output.reshape(*orig_shape[:-1], out_features))
 
     def _forward_gemm(self, x: torch.Tensor) -> torch.Tensor:
         """Fallback: dequantize RTN weights to float, then standard matmul."""
@@ -166,7 +168,12 @@ class RTNMarlinLinear(nn.Module):
             group_size=self.group_size,
             shape=self.shape,
         )
-        return x @ weight.t()
+        return self._apply_bias(x @ weight.to(device=x.device, dtype=x.dtype).t())
+
+    def _apply_bias(self, output: torch.Tensor) -> torch.Tensor:
+        if self.bias is None:
+            return output
+        return output + self.bias.to(device=output.device, dtype=output.dtype)
 
     def extra_repr(self) -> str:
         mode = "marlin" if self._has_marlin else "gemm_fallback"

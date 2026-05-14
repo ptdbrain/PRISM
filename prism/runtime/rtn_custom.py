@@ -66,6 +66,7 @@ class RTNCustomLinear(nn.Module):
         bits: int,
         group_size: int,
         shape: list[int],
+        bias: torch.Tensor | None = None,
         *,
         gptq_qweight: torch.Tensor | None = None,
         gptq_scales: torch.Tensor | None = None,
@@ -75,6 +76,7 @@ class RTNCustomLinear(nn.Module):
         # --- Always keep raw RTN tensors for GEMM fallback ---
         self.register_buffer("qweight", qweight)
         self.register_buffer("scales", scales)
+        self.register_buffer("bias", None if bias is None else bias.detach().clone())
         self.bits = bits
         self.group_size = group_size
         self.shape = shape
@@ -136,7 +138,7 @@ class RTNCustomLinear(nn.Module):
                 self.gptq_scales, self.group_size, vec_height,
             )
 
-        return mul.to(torch.float16).reshape(*orig_shape[:-1], out_features)
+        return self._apply_bias(mul.to(torch.float16).reshape(*orig_shape[:-1], out_features))
 
     def _forward_gemm(self, x: torch.Tensor) -> torch.Tensor:
         """Fallback: dequantize RTN weights to float, then standard matmul."""
@@ -147,7 +149,12 @@ class RTNCustomLinear(nn.Module):
             group_size=self.group_size,
             shape=self.shape,
         )
-        return x @ weight.t()
+        return self._apply_bias(x @ weight.to(device=x.device, dtype=x.dtype).t())
+
+    def _apply_bias(self, output: torch.Tensor) -> torch.Tensor:
+        if self.bias is None:
+            return output
+        return output + self.bias.to(device=output.device, dtype=output.dtype)
 
     def extra_repr(self) -> str:
         mode = f"rtn_custom_{self.bits}bit" if self._has_rtn_kernel else "gemm_fallback"

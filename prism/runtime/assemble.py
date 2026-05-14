@@ -81,6 +81,8 @@ def _validate_runtime_inputs(
                 raise ValueError(f"Manifest entry for {layer_name}/{bit}-bit missing '{key}'.")
             if not (artifact_root / layer_entry[key]).exists():
                 raise FileNotFoundError(f"Runtime artifact not found: {artifact_root / layer_entry[key]}")
+        if layer_entry.get("bias_path") and not (artifact_root / layer_entry["bias_path"]).exists():
+            raise FileNotFoundError(f"Runtime artifact not found: {artifact_root / layer_entry['bias_path']}")
 
     return chosen_assignment
 
@@ -126,6 +128,9 @@ def assemble_runtime_model(
         layer_entry = manifest["layers"][layer_name][str(bit)]
         qweight = torch.load(artifact_root / layer_entry["qweight_path"], map_location="cpu")
         scales = torch.load(artifact_root / layer_entry["scale_path"], map_location="cpu")
+        bias = None
+        if layer_entry.get("bias_path"):
+            bias = torch.load(artifact_root / layer_entry["bias_path"], map_location="cpu")
         target_device = _module_device(current_module)
 
         backend = choose_backend(
@@ -151,6 +156,7 @@ def assemble_runtime_model(
                 bits=bit,
                 group_size=group_size,
                 shape=shape,
+                bias=bias,
                 marlin_qweight=marlin_pack["qweight_marlin"],
                 marlin_scales=marlin_pack["scales_marlin"],
                 workspace=marlin_pack["workspace"],
@@ -172,6 +178,7 @@ def assemble_runtime_model(
                 bits=bit,
                 group_size=group_size,
                 shape=shape,
+                bias=bias,
                 gptq_qweight=gptq_qweight,
                 gptq_scales=gptq_scales,
             )
@@ -196,6 +203,7 @@ def assemble_runtime_model(
                 bits=bit,
                 group_size=group_size,
                 shape=shape,
+                bias=bias,
                 gptq_qweight=gptq_qweight,
                 gptq_scales=gptq_scales,
                 gptq_qzeros=gptq_qzeros,
@@ -209,6 +217,7 @@ def assemble_runtime_model(
                 bits=bit,
                 group_size=group_size,
                 shape=shape,
+                bias=bias,
             )
 
         wrapper = wrapper.to(target_device)

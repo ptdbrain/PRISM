@@ -71,9 +71,13 @@ def precompute_model_rtn(
             qweight_path = layer_dir / "qweight.pt"
             scale_path = layer_dir / "scales.pt"
             metadata_path = layer_dir / "metadata.json"
+            bias_path = layer_dir / "bias.pt"
 
             torch.save(pack_qweight_for_storage(quantized["qweight"]), qweight_path)
             torch.save(quantized["scales"], scale_path)
+            has_bias = module.bias is not None
+            if has_bias:
+                torch.save(module.bias.detach().cpu(), bias_path)
 
             metadata = {
                 "layer_name": layer_name,
@@ -81,7 +85,10 @@ def precompute_model_rtn(
                 "shape": list(module.weight.shape),
                 "group_size": group_size,
                 "dtype": "int16",
+                "has_bias": has_bias,
             }
+            if has_bias:
+                metadata["bias_path"] = str(bias_path.relative_to(output_dir))
 
             # --- AutoGPTQ packing (2/3/4-bit) ---
             autogptq_compatible = False
@@ -118,7 +125,10 @@ def precompute_model_rtn(
                 "metadata_path": str(metadata_path.relative_to(output_dir)),
                 "marlin_compatible": bit == 4,
                 "autogptq_compatible": autogptq_compatible,
+                "has_bias": has_bias,
             }
+            if has_bias:
+                layer_manifest["bias_path"] = str(bias_path.relative_to(output_dir))
 
             # Add GPTQ artifact paths to manifest for assembly
             if autogptq_compatible:
