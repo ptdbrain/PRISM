@@ -1,4 +1,8 @@
 tests/*
+!tests/
+!tests/prism/
+tests/prism/*
+!tests/prism/test_atlas_*.py
 verification_artifacts/*
 *.log
 *.tmp

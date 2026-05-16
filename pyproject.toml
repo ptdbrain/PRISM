@@ -24,6 +24,11 @@ prism-quic = "prism.cli.quic:main"
 prism-precompute-rtn = "prism.cli.precompute_rtn:main"
 prism-run = "prism.cli.run:main"
 prism-demo = "prism.cli.demo:main"
+prism-atlas-train = "prism.cli.atlas_train:main"
+prism-atlas-profile = "prism.cli.atlas_profile:main"
+prism-atlas-assign = "prism.cli.atlas_assign:main"
+prism-atlas-quic-plan = "prism.cli.atlas_quic_plan:main"
+prism-atlas-protocol = "prism.cli.atlas_protocol:main"
 
 [tool.pytest.ini_options]
 addopts = "-ra --basetemp=.pytest_tmp_local/basetemp -o cache_dir=.pytest_tmp_local/cache"

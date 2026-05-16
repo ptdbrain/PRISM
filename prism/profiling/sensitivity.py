@@ -126,7 +126,16 @@ def build_training_dataset(
         except ImportError as exc:  # pragma: no cover
             raise RuntimeError("build_training_dataset requires transformers for real models.") from exc
 
-        loaded = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.float16, device_map="auto")
+        try:
+            loaded = AutoModelForCausalLM.from_pretrained(
+                model_name,
+                torch_dtype=torch.float16,
+                device_map="auto",
+            )
+        except TypeError as exc:
+            if "device_map" not in str(exc):
+                raise
+            loaded = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.float16)
         loaded.eval()
         eval_input_ids = prepare_wikitext2_input_ids(model_name)
         ppl_base = eval_wikitext2_perplexity(loaded, tokenizer_id=model_name, input_ids=eval_input_ids)
