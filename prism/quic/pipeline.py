@@ -18,7 +18,7 @@ def run_quic_correction(
     group_size: int = 128,
     precomputed: dict | None = None,
 ) -> dict[str, object]:
-    del hidden_size, seq_len
+    del hidden_size
     profile = profile_dict_from_artifact(profile_artifact)
     if precomputed is None:
         precomputed = precompute_all(model, bits_list=[2, 3, 4], group_size=group_size)
@@ -34,12 +34,13 @@ def run_quic_correction(
         budget_bits=budget_bits,
         max_iters=rounds,
         n_samples=4,
+        seq_len=seq_len,
     )
     current_weight_bits = sum(new_bits[n] * int(profile[n]["num_params"]) for n in new_bits)
     current_memory_bits = sum(layer_cost_from_profile(profile[n], new_bits[n]) for n in new_bits)
     average_bits = current_weight_bits / total_params if total_params else 0.0
 
-    deltas = measure_output_perturbation(model, precomputed, new_bits)
+    deltas = measure_output_perturbation(model, precomputed, new_bits, seq_len=seq_len)
     surprise = compute_surprise(deltas, profile, new_bits)
     swap_count = sum(1 for k in orig_bits if orig_bits[k] != new_bits[k])
 

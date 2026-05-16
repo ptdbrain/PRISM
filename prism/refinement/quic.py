@@ -32,21 +32,22 @@ def measure_output_perturbation(
     n_samples: int = 4,
     seq_len: int = 32,
 ) -> dict[str, float]:
-    hidden = _hidden_dim(model)
-    x = torch.randn(n_samples, seq_len, hidden, dtype=torch.float32)
-    xf = x.reshape(-1, hidden)
     deltas: dict[str, float] = {}
     layer_items = list(iter_named_linear_layers(model))
     for layer_name, module in tqdm(layer_items, desc="Stage 2.5 QUIC layer deltas", unit="layer", leave=False):
         bits = int(config[layer_name])
         pack = precomputed[layer_name][bits]
+        in_features = int(module.in_features)
+        device = module.weight.device
+        x = torch.randn(n_samples, seq_len, in_features, dtype=torch.float32, device=device)
+        xf = x.reshape(-1, in_features)
         W = module.weight.detach().float()
         Wh = dequantize_layer(
             pack["W_int"],
             pack["scale"],
             tuple(pack["shape"]),
             int(pack["group_size"]),
-        ).float()
+        ).float().to(device=device)
         y_full = xf @ W.t()
         y_quant = xf @ Wh.t()
         num = (y_full - y_quant).pow(2).sum()
@@ -121,6 +122,7 @@ def quic_refine(
     budget_bits: float,
     max_iters: int = 3,
     n_samples: int = 4,
+    seq_len: int = 32,
 ) -> dict[str, int]:
     missing_profile = set(config) - set(profile)
     if missing_profile:
@@ -156,7 +158,7 @@ def quic_refine(
         logger.debug("Initial QUIC assignment under budget: %.2f < %.2f bits", current_memory, budget_bits)
 
     for iteration in tqdm(range(max_iters), desc="Stage 2.5 QUIC iterations", unit="iter"):
-        deltas = measure_output_perturbation(model, precomputed, cfg, n_samples=n_samples)
+        deltas = measure_output_perturbation(model, precomputed, cfg, n_samples=n_samples, seq_len=seq_len)
         surprise = compute_surprise(deltas, profile, cfg)
         new_cfg = greedy_swap(cfg, surprise, profile, budget_bits)
         if new_cfg == cfg:
